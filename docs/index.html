@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#000000" />
+  <title>Vibestr • Nostr Viewer</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
+  <meta name="description" content="A lightweight PWA to follow Nostr npubs and view their latest posts." />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <noscript>This app requires JavaScript to function fully.</noscript>
+
+  <header class="topbar">
+    <button id="burgerBtn" class="icon-btn" aria-label="Open menu" title="Menu">☰</button>
+    <h1 class="brand">Vibestr</h1>
+    <div class="spacer"></div>
+    <button id="refreshBtn" class="chip">Fetch posts</button>
+  </header>
+
+  <aside id="drawer" class="drawer">
+    <div class="drawer-header">
+      <h2 class="drawer-title">Vibestr</h2>
+      <button id="closeDrawerBtn" class="icon-btn" aria-label="Close menu">✕</button>
+    </div>
+    <nav class="drawer-nav">
+      <button class="nav-item" data-view="inbox">Inbox</button>
+      <button class="nav-item" data-view="archive">Archive</button>
+      <button class="nav-item" data-view="following">Following</button>
+      <hr />
+      <button id="drawerFollowBtn" class="nav-item">+ Follow</button>
+      <button id="storageBtn" class="nav-item">Storage</button>
+    </nav>
+  </aside>
+  <div id="scrim" class="scrim" hidden></div>
+
+  <main id="content" class="content">
+    <section id="emptyState" class="empty">
+      <p>No posts yet.</p>
+      <p>Add npubs to follow, then tap “Fetch posts”.</p>
+      <button id="emptyFetchBtn" class="chip">Fetch posts</button>
+    </section>
+    <section id="archiveToolbar" class="archive-bar" hidden>
+      <button id="archiveFavToggle" class="toggle-btn" aria-pressed="false" type="button">Only favorites</button>
+    </section>
+    <section id="feed" class="feed" aria-live="polite"></section>
+  </main>
+  
+
+  <button id="bottomSheetToggle" class="bottom-toggle" aria-label="Open actions">▲</button>
+  <section id="bottomSheet" class="bottom-sheet" aria-hidden="true">
+    <div class="handle"></div>
+    <div class="sheet-actions">
+      <button class="sheet-btn" id="sheetFollow">+ Follow</button>
+      <button class="sheet-btn" id="sheetRefresh">Fetch posts</button>
+      <button class="sheet-btn" id="sheetStorage">Storage</button>
+    </div>
+  </section>
+
+  
+
+  <dialog id="followDialog" class="dialog">
+    <form method="dialog" class="dialog-body" id="followForm">
+      <h3>Add Nostr Public Key</h3>
+      <p class="muted">Paste an npub, nprofile, or hex pubkey. You can also scan a QR code later.</p>
+      <input id="npubInput" type="text" inputmode="text" placeholder="npub1... or nprofile1... or hex" autocomplete="off" />
+      <menu class="dialog-actions">
+        <button value="cancel">Cancel</button>
+        <button id="scanQRBtn" type="button">Scan QR</button>
+        <button id="followAddBtn" value="default" class="primary">Add</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="storageDialog" class="dialog">
+    <form method="dialog" class="dialog-body">
+      <h3>Storage Management</h3>
+      <div class="kv">
+        <div>localStorage used</div>
+        <div id="lsUsed">0 B</div>
+      </div>
+      <div class="kv">
+        <div>Posts stored</div>
+        <div id="postCount">0</div>
+      </div>
+      <p class="muted">Favorites are never purged. Vibestr keeps your last 100 non-favorite posts automatically. Use the buttons below to wipe storage or your follow list.</p>
+      <menu class="dialog-actions">
+        <button id="nukePostsConfirmBtn" type="button" class="danger">Nuke Posts</button>
+        <button id="nukeFollowsConfirmBtn" type="button" class="danger">Nuke Follow List</button>
+        <button value="cancel">Close</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="qrDialog" class="dialog">
+    <form method="dialog" class="dialog-body" id="qrForm">
+      <h3>Scan QR</h3>
+      <video id="qrVideo" playsinline autoplay muted style="width:100%;max-height:60vh;border-radius:.5rem;background:#000"></video>
+      <p class="muted">Point your camera at a QR code containing an npub or nprofile. Grant camera permission when prompted.</p>
+      <menu class="dialog-actions">
+        <button value="cancel" id="qrCloseBtn">Close</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <template id="postTemplate">
+    <article class="post" tabindex="0">
+      <header class="post-h">
+        <div class="avatar" aria-hidden="true">👤</div>
+        <div class="meta">
+          <div class="author" data-field="author">npub…</div>
+          <div class="time" data-field="time">just now</div>
+        </div>
+        <div class="actions">
+          <button class="icon-btn fav" title="Favorite" aria-label="Favorite">☆</button>
+        </div>
+      </header>
+      <div class="content" data-field="content"></div>
+    </article>
+  </template>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

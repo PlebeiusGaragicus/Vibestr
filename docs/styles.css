@@ -1,0 +1,101 @@
+/* Vibestr - OLED dark + purple */
+:root{
+  --bg:#000000;
+  --fg:#e5e7eb; /* gray-200 */
+  --muted:#9ca3af; /* gray-400 */
+  --card:#0b0b0b;
+  --border:#1f2937; /* gray-800 */
+  --purple:#7c3aed; /* violet-600 */
+  --purple-700:#6d28d9; /* violet-700 */
+  --ok:#22c55e;
+  --danger:#ef4444;
+}
+*,*::before,*::after{ box-sizing:border-box; }
+html,body{ height:100%; }
+body{
+  margin:0; background:var(--bg); color:var(--fg); font: 16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+}
+
+/* Always honor [hidden] regardless of other display styles */
+[hidden]{ display:none !important; }
+
+/* Mobile: hide topbar fetch button; it lives in the bottom sheet */
+#refreshBtn{ display:none; }
+
+.topbar{
+  position:sticky; top:0; z-index:20; display:flex; align-items:center; gap:.5rem;
+  background:#000; border-bottom:1px solid var(--border); padding:.5rem .75rem;
+}
+.brand{ font-size:1.15rem; margin:0; }
+.spacer{ flex:1; }
+.icon-btn{ background:transparent; border:1px solid var(--border); color:var(--fg); border-radius:.5rem; padding:.4rem .6rem; cursor:pointer; }
+.icon-btn:hover{ border-color:var(--purple); }
+.chip{ background:var(--purple); color:white; border:none; border-radius:999px; padding:.4rem .8rem; cursor:pointer; }
+.chip:hover{ background:var(--purple-700); }
+
+.content{ max-width:740px; margin:0 auto; padding: .5rem .75rem 4rem; }
+.empty{ text-align:center; padding:2rem 1rem; color:var(--muted); }
+
+.feed{ display:grid; gap:.75rem; }
+.post{ background:var(--card); border:1px solid var(--border); border-radius:1rem; padding:.75rem; }
+.post-h{ display:flex; align-items:center; gap:.6rem; }
+.avatar{ width:36px; height:36px; border-radius:999px; background:#111; display:grid; place-items:center; }
+.avatar img{ width:100%; height:100%; object-fit:cover; border-radius:999px; display:block; }
+.meta{ display:flex; flex-direction:column; font-size:.85rem; }
+.time{ color:var(--muted); font-size:.8rem; }
+.actions{ margin-left:auto; display:flex; gap:.25rem; }
+.fav{ color:#ffd166; }
+.post .content{ white-space:pre-wrap; word-wrap:break-word; margin-top:.5rem; }
+.post .content img{ max-width:100%; height:auto; border-radius:.5rem; display:block; margin-top:.25rem; }
+
+.drawer{ position:fixed; top:0; left:0; bottom:0; width:280px; background:#060606; border-right:1px solid var(--border); transform:translateX(-100%); transition:transform .25s ease; z-index:30; padding: .5rem; }
+.drawer.open{ transform:none; }
+.scrim{ position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:25; }
+.drawer-header{ display:flex; align-items:center; justify-content:space-between; padding:.25rem .5rem; }
+.drawer-title{ font-size:1.3rem; font-weight:700; color:var(--purple); margin:0; letter-spacing:.3px; }
+.drawer-nav{ display:flex; flex-direction:column; gap:.35rem; padding:.5rem; }
+.nav-item{ text-align:center; background:transparent; border:1px solid var(--border); color:var(--fg); border-radius:.5rem; padding:.6rem .8rem; cursor:pointer; font-size:1.05rem; }
+.nav-item:hover{ border-color:var(--purple); }
+.nav-item.danger{ border-color:#3b0b0b; color:#ffabab; }
+
+.bottom-toggle{ position:fixed; right:.75rem; bottom:1rem; z-index:20; background:#0b0b0b; color:var(--fg); border:1px solid var(--border); border-radius:999px; padding:.4rem .7rem; }
+.bottom-sheet{ position:fixed; left:0; right:0; bottom:0; background:#060606; border-top:1px solid var(--border); border-top-left-radius:1rem; border-top-right-radius:1rem; transform:translateY(100%); transition: transform .25s ease; z-index:35; padding:.5rem 1rem 1rem; }
+.bottom-sheet.open{ transform:none; }
+.bottom-sheet .handle{ width:44px; height:4px; background:#333; border-radius:2px; margin:.4rem auto 1rem; }
+.sheet-actions{ display:flex; gap:.5rem; justify-content:center; }
+.sheet-btn{ background:var(--purple); color:#fff; border:none; border-radius:.75rem; padding:.5rem .8rem; }
+
+.dialog{ border:none; background:#0c0c0c; color:var(--fg); border:1px solid var(--border); border-radius:.75rem; }
+.dialog::backdrop{ background:rgba(0,0,0,.6); }
+.dialog-body{ min-width:min(92vw, 520px); padding:1rem; }
+.dialog-actions{ display:flex; justify-content:flex-end; gap:.5rem; padding-top:.5rem; }
+.dialog input{ width:100%; padding:.6rem .7rem; border-radius:.5rem; border:1px solid var(--border); background:#050505; color:var(--fg); }
+.primary{ background:var(--purple); color:#fff; border:none; border-radius:.6rem; padding:.5rem .9rem; }
+.danger{ background:transparent; color:#ffabab; border:1px solid #3b0b0b; border-radius:.6rem; padding:.5rem .9rem; }
+.danger:hover{ border-color:#5a1616; }
+.danger.confirm{ background:var(--danger); color:#fff; border-color:var(--danger); }
+
+.ptr{ position:fixed; top:0; left:0; right:0; display:grid; place-items:center; height:56px; background:linear-gradient(180deg, rgba(124,58,237,.2), rgba(124,58,237,0)); pointer-events:none; z-index:10; }
+.ptr-indicator{ color:var(--muted); }
+
+.kv{ display:flex; justify-content:space-between; gap:1rem; padding:.4rem 0; border-bottom:1px dashed #222; }
+.muted{ color:var(--muted); font-size:.9rem; }
+
+/* Archive toolbar */
+.archive-bar{ display:flex; align-items:center; gap:1rem; padding:.25rem .25rem 0; color:var(--muted); }
+.toggle-btn{ background:transparent; border:1px solid var(--border); color:var(--fg); border-radius:.6rem; padding:.3rem .6rem; cursor:pointer; }
+.toggle-btn[aria-pressed="true"]{ background:var(--purple); color:#fff; border-color:var(--purple); }
+
+/* Sentinel to detect bottom-of-feed on desktop */
+.sentinel{ height:1px; }
+
+@media (min-width: 900px){
+  .bottom-toggle, .bottom-sheet{ display:none; }
+  /* Desktop: show fetch button in topbar */
+  #refreshBtn{ display:inline-block; opacity:1; pointer-events:auto; }
+}
+
+/* Quote styles */
+.quote{ border:1px solid var(--border); background:#080808; border-radius:.75rem; padding:.5rem; margin-top:.5rem; }
+.quote-h{ display:flex; align-items:center; gap:.5rem; margin-bottom:.25rem; }
+.quote .content{ white-space:pre-wrap; word-wrap:break-word; }

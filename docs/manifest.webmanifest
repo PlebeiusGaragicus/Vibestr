@@ -1,0 +1,19 @@
+{
+  "name": "Vibestr - Nostr Viewer",
+  "short_name": "Vibestr",
+  "description": "A lightweight PWA to follow Nostr npubs and view their latest posts.",
+  "id": ".",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

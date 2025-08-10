@@ -582,9 +582,13 @@ async function renderFollowingView(){
     metaLine.append(name, sep1, pkline, sep2, nipEl);
     meta.append(metaLine);
     const actions = document.createElement('div'); actions.className='actions';
-    const unfBtn = document.createElement('button'); unfBtn.className='danger unfollow-btn'; unfBtn.type='button'; unfBtn.textContent='Unfollow';
-    const refBtn = document.createElement('button'); refBtn.className='icon-btn'; refBtn.type='button'; refBtn.textContent='Refresh';
-    actions.append(unfBtn, refBtn);
+    // Overflow menu: single "..." button
+    const menuBtn = document.createElement('button'); menuBtn.className='icon-btn menu-btn'; menuBtn.type='button'; menuBtn.setAttribute('aria-haspopup','true'); menuBtn.setAttribute('aria-expanded','false'); menuBtn.title = 'More actions'; menuBtn.textContent = '…';
+    const bubble = document.createElement('div'); bubble.className='menu-bubble';
+    const unfollowBtn = document.createElement('button'); unfollowBtn.className='danger unfollow-btn'; unfollowBtn.type='button'; unfollowBtn.textContent='Unfollow';
+    const refreshBtn = document.createElement('button'); refreshBtn.className='icon-btn'; refreshBtn.type='button'; refreshBtn.textContent='Refresh';
+    bubble.append(unfollowBtn, refreshBtn);
+    actions.append(menuBtn, bubble);
     header.append(ava, meta, actions);
     const body = document.createElement('div'); body.className='post-content';
     const about = (prof?.about||'').trim();
@@ -593,9 +597,24 @@ async function renderFollowingView(){
     card.append(header, body);
     feed.appendChild(card);
 
-    // Per-card Refresh handler
-    refBtn.addEventListener('click', async () => {
-      const keep = refBtn.textContent; refBtn.textContent='Refreshing…'; refBtn.disabled = true;
+    // Menu open/close
+    const closeMenu = () => { bubble.classList.remove('open'); menuBtn.setAttribute('aria-expanded','false'); };
+    const openMenu = () => { bubble.classList.add('open'); menuBtn.setAttribute('aria-expanded','true'); };
+    menuBtn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      if (bubble.classList.contains('open')) { closeMenu(); }
+      else {
+        openMenu();
+        const onDocClick = (e) => {
+          if (!bubble.contains(e.target) && e.target !== menuBtn) { closeMenu(); document.removeEventListener('click', onDocClick); }
+        };
+        setTimeout(() => document.addEventListener('click', onDocClick), 0);
+      }
+    });
+
+    // Per-card Refresh handler (submenu)
+    refreshBtn.addEventListener('click', async () => {
+      const keep = refreshBtn.textContent; refreshBtn.textContent='Refreshing…'; refreshBtn.disabled = true;
       await refreshProfile(pk);
       const updated = state.profiles?.[pk] || null;
       name.textContent = (updated?.display_name||updated?.name||'').trim() || shortenAuthor(pk);
@@ -604,11 +623,11 @@ async function renderFollowingView(){
       if (updated?.picture){ ava.innerHTML=''; const img=document.createElement('img'); img.src=updated.picture; img.alt=''; ava.append(img);} else { ava.textContent='👤'; ava.innerHTML='👤'; }
       setupPkCopy(pkline, pk);
       renderNip05Badge(nipEl, pk, true);
-      refBtn.textContent = keep; refBtn.disabled = false;
+      refreshBtn.textContent = keep; refreshBtn.disabled = false; closeMenu();
     });
 
-    // Unfollow handler: double-click confirm using shared helper
-    setupConfirmButton(unfBtn, async () => {
+    // Unfollow handler: double-click confirm using shared helper (submenu)
+    setupConfirmButton(unfollowBtn, async () => {
       try { console.debug('[Vibestr][follow] Unfollow confirmed', { targetHex: pk }); } catch {}
       const hexOf = async (s) => {
         const v = (s||'').trim(); if (!v) return null;
@@ -639,6 +658,7 @@ async function renderFollowingView(){
         }
       }
       if (state.follows.length !== before){ try { console.debug('[Vibestr][follow] Unfollow removed', { before, after: state.follows.length, follows: state.follows, purgedPosts: removedIds.length }); } catch {} ; saveFollows(); persistStorage(); renderFeed(); }
+      closeMenu();
     });
   }
 

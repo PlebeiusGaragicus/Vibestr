@@ -140,8 +140,15 @@ body{
 .follow-card .post-h{ display:contents; }
 .follow-card .avatar{ grid-column:1; }
 .follow-card .meta{ grid-column:2; flex:1 1 auto; }
-.follow-card .actions{ grid-column:3; justify-self:end; margin-left:0; position:static; display:flex; flex-direction:column; gap:.35rem; align-items:stretch; }
+.follow-card .actions{ grid-column:3; justify-self:end; margin-left:0; position:relative; display:flex; flex-direction:column; gap:.35rem; align-items:flex-end; }
+/* Default action buttons style (kept for potential reuse) */
 .follow-card .actions > button{ font-size:1.05rem; padding:.55rem 1rem; border-radius:.7rem; min-height:40px; width:100%; }
+/* Overflow menu trigger */
+.follow-card .actions > .menu-btn{ width:auto; min-width:36px; height:36px; padding:0 .6rem; border-radius:.7rem; font-size:1.25rem; line-height:1; width:auto; }
+/* Bubble menu */
+.menu-bubble{ position:absolute; top:42px; right:0; background:#080808; border:1px solid var(--border); border-radius:.75rem; box-shadow:0 10px 24px rgba(0,0,0,.45); padding:.4rem; display:none; z-index:30; min-width:160px; }
+.menu-bubble.open{ display:flex; flex-direction:column; gap:.35rem; }
+.menu-bubble > button{ width:100%; text-align:left; font-size:1rem; padding:.5rem .75rem; border-radius:.6rem; }
 .follow-card .post-content{ grid-column:1 / -1; margin-top:.25rem; }
 
 /* Copyable npub (short display) */

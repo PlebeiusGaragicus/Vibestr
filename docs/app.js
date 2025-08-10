@@ -170,8 +170,8 @@ const emptyStateEl = $('#emptyState');
 const drawer = $('#drawer');
 const scrim = $('#scrim');
 const bottomSheet = $('#bottomSheet');
-const archiveToolbar = $('#archiveToolbar');
-const archiveFavToggle = $('#archiveFavToggle');
+// Archive toolbar and Favorites toggle were removed in the refactor.
+// Settings are now managed via a dialog (see openStorageDialog()).
 const refreshBtn = $('#refreshBtn');
 const buildTag = $('#buildTag');
 
@@ -193,7 +193,7 @@ async function updateBuildTag(){
     }
   }catch(e){ buildTag.textContent = 'dev'; try { console.debug('[Vibestr][build] updateBuildTag failed', e); } catch{} }
 }
-const settingsView = $('#settingsView');
+// Inline settings view removed; we keep settings in a modal dialog.
 
 function toggleDrawer(open){
   drawer.classList.toggle('open', open ?? !drawer.classList.contains('open'));
@@ -236,10 +236,12 @@ function updateSettingsStats(){
 $('#burgerBtn')?.addEventListener('click', () => toggleDrawer(true));
 $('#closeDrawerBtn')?.addEventListener('click', () => toggleDrawer(false));
 scrim?.addEventListener('click', () => toggleDrawer(false));
-$('#bottomSheetToggle')?.addEventListener('click', () => toggleSheet());
-$('#sheetFollow')?.addEventListener('click', () => { toggleSheet(false); openFollowDialog(); });
-$('#sheetRefresh')?.addEventListener('click', () => { toggleSheet(false); refreshFeed(); });
-$('#sheetStorage')?.addEventListener('click', () => { toggleSheet(false); openStorageDialog(); });
+  $('#bottomSheetToggle')?.addEventListener('click', () => toggleSheet());
+  $('#sheetFollow')?.addEventListener('click', () => { toggleSheet(false); openFollowDialog(); });
+  $('#sheetRefresh')?.addEventListener('click', () => { toggleSheet(false); refreshFeed(); });
+  // Open Settings as a modal dialog (no inline settings view)
+  // This opens the storage management dialog for settings adjustments
+  $('#sheetStorage')?.addEventListener('click', () => { toggleSheet(false); openStorageDialog(); });
 
 $('#addFollowBtn')?.addEventListener('click', openFollowDialog);
 $('#drawerFollowBtn')?.addEventListener('click', () => { toggleDrawer(false); openFollowDialog(); });
@@ -247,17 +249,14 @@ $('#emptyFetchBtn')?.addEventListener('click', refreshFeed);
 $('#refreshBtn')?.addEventListener('click', refreshFeed);
 // (archive favorites toggle removed)
 
-$('.drawer .drawer-nav')?.addEventListener?.('click', (e) => {
-  const t = e.target.closest('.nav-item'); if(!t) return;
-  if (t.disabled) return;
-  if (t.dataset.view) {
-    // Close drawer on mobile for consistency
-    toggleDrawer(false);
-    if (state.view === t.dataset.view) return;
-    state.view = t.dataset.view; renderFeed();
-  }
-  else if (t.id === 'storageBtn') { openStorageDialog(); }
-});
+  $('.drawer .drawer-nav')?.addEventListener?.('click', (e) => {
+    const t = e.target.closest('.nav-item'); if(!t) return;
+    const view = t.dataset.view;
+    // Settings are dialog-based; clicking Settings opens the storage modal
+    // This navigates to the settings dialog for storage management and other settings
+    if (view === 'settings') { toggleDrawer(false); openStorageDialog(); return; }
+    if (view) { state.view = view; renderFeed(); toggleDrawer(false); }
+  });
 
 // Follow dialog
 const followDialog = $('#followDialog');
@@ -353,10 +352,15 @@ function extractNostrKey(s){
   return null;
 }
 
-// Settings (inline)
-const storageDialog = $('#storageDialog'); // legacy dialog removed; keep null ref for safety
-const settingsNukePostsBtn = $('#settingsNukePostsBtn');
-const settingsNukeFollowsBtn = $('#settingsNukeFollowsBtn');
+// Settings (dialog)
+const storageDialog = $('#storageDialog');
+const nukePostsBtn = $('#nukePostsConfirmBtn');
+const nukeFollowsBtn = $('#nukeFollowsConfirmBtn');
+const exportFollowsBtn = $('#exportFollowsBtn');
+const importFollowsBtn = $('#importFollowsBtn');
+const importFollowsFile = $('#importFollowsFile');
+const restoreFollowsBtn = $('#restoreFollowsConfirmBtn');
+const restoreFollowsFile = $('#restoreFollowsFile');
 
 function setupConfirmButton(btn, action){
   if (!btn) return;
@@ -374,23 +378,91 @@ function setupConfirmButton(btn, action){
   storageDialog?.addEventListener('close', reset);
 }
 
-setupConfirmButton(settingsNukePostsBtn, () => {
+setupConfirmButton(nukePostsBtn, () => {
   state.posts = {};
   state.hidden = new Set();
   state.favorites = new Set();
   persistStorage();
   renderFeed();
 });
-setupConfirmButton(settingsNukeFollowsBtn, () => {
+setupConfirmButton(nukeFollowsBtn, () => {
   state.follows = [];
   saveFollows();
   delCookie('vibestr_follows');
-  try { localStorage.removeItem(LS_FOLLOWS); } catch {}
+  if (state.view === 'following') renderFeed();
 });
+// Export follows as JSON file
+function exportFollows(){
+  const data = JSON.stringify(state.follows, null, 2);
+  const blob = new Blob([data], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const date = new Date();
+  const y = date.getFullYear();
+  const m = String(date.getMonth()+1).padStart(2,'0');
+  const d = String(date.getDate()).padStart(2,'0');
+  a.download = `vibestr-follows-${y}${m}${d}.json`;
+  a.href = url; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+exportFollowsBtn?.addEventListener('click', exportFollows);
+
+// Helpers for import/restore
+function sanitizeFollowsArray(arr){
+  const out = [];
+  const seen = new Set();
+  for (const item of (Array.isArray(arr) ? arr : [])){
+    if (typeof item !== 'string') continue;
+    let s = item.trim();
+    if (!s) continue;
+    const ex = extractNostrKey(s);
+    if (ex) s = ex;
+    if (!seen.has(s)) { seen.add(s); out.push(s); }
+  }
+  return out;
+}
+
+// Import (merge)
+importFollowsBtn?.addEventListener('click', () => importFollowsFile?.click());
+importFollowsFile?.addEventListener('change', async (e) => {
+  const file = e.target.files?.[0]; if (!file) return;
+  try {
+    const text = await file.text();
+    const parsed = JSON.parse(text);
+    const incoming = sanitizeFollowsArray(parsed);
+    const before = new Set(state.follows.map(s => s.trim()));
+    let added = 0;
+    for (const s of incoming){ if (!before.has(s)) { state.follows.push(s); before.add(s); added++; } }
+    saveFollows();
+    if (state.view === 'following') renderFeed();
+    alert(`Imported ${incoming.length} follows (added ${added} new).`);
+  } catch { alert('Failed to import: invalid JSON.'); }
+  finally { e.target.value = ''; }
+});
+
+// Restore (replace) with confirm flow triggering file picker
+setupConfirmButton(restoreFollowsBtn, () => restoreFollowsFile?.click());
+restoreFollowsFile?.addEventListener('change', async (e) => {
+  const file = e.target.files?.[0]; if (!file) return;
+  try {
+    const text = await file.text();
+    const parsed = JSON.parse(text);
+    const incoming = sanitizeFollowsArray(parsed);
+    state.follows = incoming;
+    saveFollows();
+    if (state.view === 'following') renderFeed();
+    alert(`Restored follow list (${incoming.length} entries).`);
+  } catch { alert('Failed to restore: invalid JSON.'); }
+  finally { e.target.value = ''; }
+});
+/**
+ * Open the Storage Management dialog and refresh usage stats.
+ * Settings are dialog-based; there is no inline settings view.
+ */
 function openStorageDialog(){
-  $('#lsUsed').textContent = fmtBytes(localStorageBytesUsed());
-  $('#postCount').textContent = Object.keys(state.posts).length;
-  storageDialog.showModal?.();
+  try { $('#lsUsed').textContent = fmtBytes(localStorageBytesUsed()); } catch {}
+  try { $('#postCount').textContent = Object.keys(state.posts).length; } catch {}
+  storageDialog?.showModal?.();
 }
 
 // Rendering
@@ -434,23 +506,12 @@ function eventToCard(ev){
 }
 
 function renderFeed(){
-  // Settings view (inline)
-  if (state.view === 'settings'){
-    if (archiveToolbar) archiveToolbar.hidden = true;
-    emptyStateEl.style.display = 'none';
-    feedEl.innerHTML = '';
-    settingsView.hidden = false;
-    updateSettingsStats();
-    updateNavSelection();
-    return;
-  }
-  settingsView.hidden = true;
+  // Settings is a dialog now; no content view rendering
 
   if (state.view === 'following') {
     try { console.debug('[Vibestr][render] enter view', { view: 'following', followsCount: state.follows.length }); } catch {}
     emptyStateEl.style.display = 'none';
     feedEl.innerHTML = '';
-    if (archiveToolbar) archiveToolbar.hidden = true;
     renderFollowingView().catch(()=>{});
     updateNavSelection();
     return;
@@ -493,7 +554,6 @@ function renderFeed(){
     }
     emptyStateEl.style.display = 'block';
   }
-  if (archiveToolbar) archiveToolbar.hidden = true;
   setupReadObserver();
   updateNavSelection();
 }

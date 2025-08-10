@@ -1,0 +1,23 @@
+No margin between the top of content area and the first items.
+
+
+Remove "Only favorites" from archive view
+
+
+Add search feature.
+
+
+Save videos to photo album
+
+
+Can this app accept (or can we share sheet or open in) with nostr:note1ljasfd ???
+Properly show nostr:nprofile1sadf links
+
+
+Add settings
+
+
+Sanity check scroll-to-mark-as-viewed feature
+
+
+Nip-05 verification

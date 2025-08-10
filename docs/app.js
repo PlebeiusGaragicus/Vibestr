@@ -7,6 +7,51 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(console.warn));
 }
 
+// Fetch latest kind 0 for a given hex pubkey and update state.profiles
+async function refreshProfile(pk){
+  if (!pk) return false;
+  try{
+    const meta = await queryRelaysOnce(state.relays, { kinds:[0], authors:[pk], limit: 1 });
+    if (!Array.isArray(meta) || !meta.length) return false;
+    // pick latest by created_at (across relays)
+    let latest = null;
+    for (const m of meta){ if (!latest || (m?.created_at||0) > (latest?.created_at||0)) latest = m; }
+    if (!latest) return false;
+    try { state.profiles[pk] = JSON.parse(latest.content || '{}'); } catch { return false; }
+    persistStorage();
+    return true;
+  } catch { return false; }
+}
+
+// Setup clickable shortened pubkey that copies npub to clipboard with feedback
+async function npubOf(pk){ try{ const n = await getNip19(); return n?.npubEncode ? n.npubEncode(pk) : null; } catch { return null; } }
+function setupPkCopy(el, pk){
+  if (!el) return;
+  el.classList.add('copyable');
+  const render = () => {
+    el.textContent = shortenAuthor(pk);
+    const ic = document.createElement('span'); ic.className='copy-icon'; ic.textContent='📋';
+    el.append(' ', ic);
+  };
+  render();
+  el.title = 'Click to copy npub';
+  el.onclick = async () => {
+    let npub = await npubOf(pk); if (!npub) npub = pk;
+    const doCopy = async (text) => {
+      try { await navigator.clipboard.writeText(text); return true; } catch {}
+      try {
+        const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta);
+        ta.select(); document.execCommand('copy'); document.body.removeChild(ta); return true;
+      } catch { return false; }
+    };
+    const ok = await doCopy(npub);
+    const prevTitle = el.title;
+    el.title = ok ? 'Copied!' : 'Copy failed';
+    el.textContent = ok ? 'Copied to clipboard!' : 'Copy failed';
+    setTimeout(()=>{ render(); el.title = prevTitle; }, 1200);
+  };
+}
+
 // State
 const state = {
   view: 'inbox', // inbox | past | favorites
@@ -118,6 +163,23 @@ const bottomSheet = $('#bottomSheet');
 const archiveToolbar = $('#archiveToolbar');
 const archiveFavToggle = $('#archiveFavToggle');
 const refreshBtn = $('#refreshBtn');
+const buildTag = $('#buildTag');
+
+async function updateBuildTag(){
+  if (!buildTag) return;
+  try{
+    const res = await fetch('./sw.js', { cache: 'no-store' });
+    if (!res.ok) return;
+    const txt = await res.text();
+    const m = txt.match(/const\s+CACHE\s*=\s*['\"]([^'\"]+)['\"]/);
+    if (m){
+      const full = m[1];
+      const short = full.replace(/^vibestr-/, '');
+      buildTag.textContent = short; // e.g. v9
+      buildTag.title = `Build ${full}`;
+    }
+  }catch{}
+}
 const settingsView = $('#settingsView');
 
 function toggleDrawer(open){
@@ -479,30 +541,52 @@ async function renderFollowingView(){
     }
     persistStorage();
   }
+  // Add "Refresh all" button at top of list
+  const refreshAllBtn = document.createElement('button'); refreshAllBtn.className='chip'; refreshAllBtn.type='button'; refreshAllBtn.id='followRefreshAllBtn'; refreshAllBtn.textContent='Refresh all profiles';
+  wrap.append(refreshAllBtn);
+  refreshAllBtn.addEventListener('click', async () => {
+    const prev = refreshAllBtn.textContent; refreshAllBtn.textContent='Refreshing…'; refreshAllBtn.disabled = true;
+    for (const pk of uniq){ await refreshProfile(pk); }
+    refreshAllBtn.textContent = prev; refreshAllBtn.disabled = false; renderFeed();
+  });
   // Render cards
   for (const pk of uniq){
     const prof = state.profiles?.[pk] || null;
-    const card = document.createElement('article'); card.className='post';
+    const card = document.createElement('article'); card.className='post follow-card';
     const header = document.createElement('header'); header.className='post-h';
     const ava = document.createElement('div'); ava.className='avatar';
     if (prof?.picture){ const img=document.createElement('img'); img.src=prof.picture; img.alt=''; ava.append(img);} else { ava.textContent='👤'; }
     const meta = document.createElement('div'); meta.className='meta';
     const name = document.createElement('div'); name.className='author'; name.textContent=(prof?.display_name||prof?.name||'').trim() || shortenAuthor(pk);
-    const pkline = document.createElement('div'); pkline.className='time'; pkline.textContent = shortenAuthor(pk);
+    const pkline = document.createElement('div'); pkline.className='time'; setupPkCopy(pkline, pk);
     meta.append(name, pkline);
     const actions = document.createElement('div'); actions.className='actions';
-    const unfBtn = document.createElement('button'); unfBtn.className='danger'; unfBtn.type='button'; unfBtn.textContent='Unfollow';
-    actions.append(unfBtn);
+    const unfBtn = document.createElement('button'); unfBtn.className='danger unfollow-btn'; unfBtn.type='button'; unfBtn.textContent='Unfollow';
+    const refBtn = document.createElement('button'); refBtn.className='icon-btn'; refBtn.type='button'; refBtn.textContent='Refresh';
+    actions.append(unfBtn, refBtn);
     header.append(ava, meta, actions);
-    const body = document.createElement('div'); body.className='content';
+    const body = document.createElement('div'); body.className='post-content';
     const about = (prof?.about||'').trim();
     body.textContent = about || '';
     card.append(header, body);
     feed.appendChild(card);
 
-    // Unfollow handler: remove all follows mapping to this pubkey
-    unfBtn.addEventListener('click', async () => {
-      try { console.debug('[Vibestr][follow] Unfollow clicked', { targetHex: pk }); } catch {}
+    // Per-card Refresh handler
+    refBtn.addEventListener('click', async () => {
+      const keep = refBtn.textContent; refBtn.textContent='Refreshing…'; refBtn.disabled = true;
+      await refreshProfile(pk);
+      const updated = state.profiles?.[pk] || null;
+      name.textContent = (updated?.display_name||updated?.name||'').trim() || shortenAuthor(pk);
+      const about2 = (updated?.about||'').trim();
+      body.textContent = about2 || '';
+      if (updated?.picture){ ava.innerHTML=''; const img=document.createElement('img'); img.src=updated.picture; img.alt=''; ava.append(img);} else { ava.textContent='👤'; ava.innerHTML='👤'; }
+      setupPkCopy(pkline, pk);
+      refBtn.textContent = keep; refBtn.disabled = false;
+    });
+
+    // Unfollow handler: double-click confirm using shared helper
+    setupConfirmButton(unfBtn, async () => {
+      try { console.debug('[Vibestr][follow] Unfollow confirmed', { targetHex: pk }); } catch {}
       const hexOf = async (s) => {
         const v = (s||'').trim(); if (!v) return null;
         if (/^[0-9a-f]{64}$/i.test(v)) return v.toLowerCase();
@@ -751,4 +835,5 @@ function queryRelaysOnce(relayUrls, filter){
 loadFollows();
 loadStorage();
 renderFeed();
+updateBuildTag();
 // Do NOT auto-load new posts on open (per requirement)

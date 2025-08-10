@@ -21,3 +21,8 @@ Sanity check scroll-to-mark-as-viewed feature
 
 
 Nip-05 verification
+
+
+Even posts that are favorited need to be marked as read and removed from the inbox feed
+
+

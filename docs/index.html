@@ -42,34 +42,6 @@
       <p>Add npubs to follow, then tap “Fetch posts”.</p>
       <button id="emptyFetchBtn" class="chip">Fetch posts</button>
     </section>
-    <!-- Settings are presented as a modal dialog; no inline settings view.
-         See openStorageDialog() in docs/app.js for the triggering logic. -->
-    <dialog id="storageDialog" class="dialog">
-     <form method="dialog" class="dialog-body">
-       <h3>Storage Management</h3>
-       <div class="kv">
-         <div>localStorage used</div>
-         <div id="lsUsed">0 B</div>
-       </div>
-       <div class="kv">
-         <div>Posts stored</div>
-         <div id="postCount">0</div>
-       </div>
-       <p class="muted">Favorites are never purged. Vibestr keeps your last 100 non-favorite posts automatically. Use the buttons below to wipe storage or your follow list.</p>
-        <!-- Backup & Restore follows -->
-        <p class="muted">Backup & Restore your follow list</p>
-        <input id="importFollowsFile" type="file" accept="application/json" hidden />
-        <input id="restoreFollowsFile" type="file" accept="application/json" hidden />
-       <menu class="dialog-actions">
-          <button id="exportFollowsBtn" type="button">Export Follows</button>
-          <button id="importFollowsBtn" type="button">Import Follows (Merge)</button>
-          <button id="restoreFollowsConfirmBtn" type="button" class="danger">Restore Follows (Replace)</button>
-          <button id="nukePostsConfirmBtn" type="button" class="danger">Nuke Posts</button>
-          <button id="nukeFollowsConfirmBtn" type="button" class="danger">Nuke Follow List</button>
-          <button value="cancel">Close</button>
-       </menu>
-     </form>
-   </dialog>
     <section id="feed" class="feed" aria-live="polite"></section>
   </main>
   

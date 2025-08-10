@@ -193,7 +193,6 @@ async function updateBuildTag(){
     }
   }catch(e){ buildTag.textContent = 'dev'; try { console.debug('[Vibestr][build] updateBuildTag failed', e); } catch{} }
 }
-// Inline settings view removed; we keep settings in a modal dialog.
 
 function toggleDrawer(open){
   drawer.classList.toggle('open', open ?? !drawer.classList.contains('open'));
@@ -239,9 +238,8 @@ scrim?.addEventListener('click', () => toggleDrawer(false));
   $('#bottomSheetToggle')?.addEventListener('click', () => toggleSheet());
   $('#sheetFollow')?.addEventListener('click', () => { toggleSheet(false); openFollowDialog(); });
   $('#sheetRefresh')?.addEventListener('click', () => { toggleSheet(false); refreshFeed(); });
-  // Open Settings as a modal dialog (no inline settings view)
-  // This opens the storage management dialog for settings adjustments
-  $('#sheetStorage')?.addEventListener('click', () => { toggleSheet(false); openStorageDialog(); });
+  // Open Settings as a normal page (inline view)
+  $('#sheetStorage')?.addEventListener('click', () => { toggleSheet(false); state.view = 'settings'; renderFeed(); });
 
 $('#addFollowBtn')?.addEventListener('click', openFollowDialog);
 $('#drawerFollowBtn')?.addEventListener('click', () => { toggleDrawer(false); openFollowDialog(); });
@@ -252,9 +250,6 @@ $('#refreshBtn')?.addEventListener('click', refreshFeed);
   $('.drawer .drawer-nav')?.addEventListener?.('click', (e) => {
     const t = e.target.closest('.nav-item'); if(!t) return;
     const view = t.dataset.view;
-    // Settings are dialog-based; clicking Settings opens the storage modal
-    // This navigates to the settings dialog for storage management and other settings
-    if (view === 'settings') { toggleDrawer(false); openStorageDialog(); return; }
     if (view) { state.view = view; renderFeed(); toggleDrawer(false); }
   });
 
@@ -353,14 +348,7 @@ function extractNostrKey(s){
 }
 
 // Settings (dialog)
-const storageDialog = $('#storageDialog');
-const nukePostsBtn = $('#nukePostsConfirmBtn');
-const nukeFollowsBtn = $('#nukeFollowsConfirmBtn');
-const exportFollowsBtn = $('#exportFollowsBtn');
-const importFollowsBtn = $('#importFollowsBtn');
-const importFollowsFile = $('#importFollowsFile');
-const restoreFollowsBtn = $('#restoreFollowsConfirmBtn');
-const restoreFollowsFile = $('#restoreFollowsFile');
+const storageDialog = $('#storageDialog'); // no longer used (settings is a page)
 
 function setupConfirmButton(btn, action){
   if (!btn) return;
@@ -378,34 +366,18 @@ function setupConfirmButton(btn, action){
   storageDialog?.addEventListener('close', reset);
 }
 
-setupConfirmButton(nukePostsBtn, () => {
-  state.posts = {};
-  state.hidden = new Set();
-  state.favorites = new Set();
-  persistStorage();
-  renderFeed();
-});
-setupConfirmButton(nukeFollowsBtn, () => {
-  state.follows = [];
-  saveFollows();
-  delCookie('vibestr_follows');
-  if (state.view === 'following') renderFeed();
-});
+// Nuke actions are wired inside renderSettingsView()
 // Export follows as JSON file
 function exportFollows(){
   const data = JSON.stringify(state.follows, null, 2);
   const blob = new Blob([data], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  const date = new Date();
-  const y = date.getFullYear();
-  const m = String(date.getMonth()+1).padStart(2,'0');
-  const d = String(date.getDate()).padStart(2,'0');
-  a.download = `vibestr-follows-${y}${m}${d}.json`;
+  a.download = 'npubs_follows.json';
   a.href = url; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-exportFollowsBtn?.addEventListener('click', exportFollows);
+// Export action wired in renderSettingsView()
 
 // Helpers for import/restore
 function sanitizeFollowsArray(arr){
@@ -422,48 +394,8 @@ function sanitizeFollowsArray(arr){
   return out;
 }
 
-// Import (merge)
-importFollowsBtn?.addEventListener('click', () => importFollowsFile?.click());
-importFollowsFile?.addEventListener('change', async (e) => {
-  const file = e.target.files?.[0]; if (!file) return;
-  try {
-    const text = await file.text();
-    const parsed = JSON.parse(text);
-    const incoming = sanitizeFollowsArray(parsed);
-    const before = new Set(state.follows.map(s => s.trim()));
-    let added = 0;
-    for (const s of incoming){ if (!before.has(s)) { state.follows.push(s); before.add(s); added++; } }
-    saveFollows();
-    if (state.view === 'following') renderFeed();
-    alert(`Imported ${incoming.length} follows (added ${added} new).`);
-  } catch { alert('Failed to import: invalid JSON.'); }
-  finally { e.target.value = ''; }
-});
-
-// Restore (replace) with confirm flow triggering file picker
-setupConfirmButton(restoreFollowsBtn, () => restoreFollowsFile?.click());
-restoreFollowsFile?.addEventListener('change', async (e) => {
-  const file = e.target.files?.[0]; if (!file) return;
-  try {
-    const text = await file.text();
-    const parsed = JSON.parse(text);
-    const incoming = sanitizeFollowsArray(parsed);
-    state.follows = incoming;
-    saveFollows();
-    if (state.view === 'following') renderFeed();
-    alert(`Restored follow list (${incoming.length} entries).`);
-  } catch { alert('Failed to restore: invalid JSON.'); }
-  finally { e.target.value = ''; }
-});
-/**
- * Open the Storage Management dialog and refresh usage stats.
- * Settings are dialog-based; there is no inline settings view.
- */
-function openStorageDialog(){
-  try { $('#lsUsed').textContent = fmtBytes(localStorageBytesUsed()); } catch {}
-  try { $('#postCount').textContent = Object.keys(state.posts).length; } catch {}
-  storageDialog?.showModal?.();
-}
+// Import/Restore actions wired in renderSettingsView()
+// openStorageDialog() removed; settings is rendered inline
 
 // Rendering
 function eventToCard(ev){
@@ -506,7 +438,15 @@ function eventToCard(ev){
 }
 
 function renderFeed(){
-  // Settings is a dialog now; no content view rendering
+  // Handle Settings as a full page
+  if (state.view === 'settings') {
+    try { console.debug('[Vibestr][render] enter view', { view: 'settings' }); } catch {}
+    emptyStateEl.style.display = 'none';
+    feedEl.innerHTML = '';
+    renderSettingsView();
+    updateNavSelection();
+    return;
+  }
 
   if (state.view === 'following') {
     try { console.debug('[Vibestr][render] enter view', { view: 'following', followsCount: state.follows.length }); } catch {}
@@ -556,6 +496,103 @@ function renderFeed(){
   }
   setupReadObserver();
   updateNavSelection();
+}
+
+// Settings full-page renderer (uses cards to separate areas)
+function renderSettingsView(){
+  const feed = feedEl;
+
+  // Card: Storage stats
+  const stats = document.createElement('div');
+  stats.className = 'card';
+  stats.innerHTML = `
+    <h3>Storage Management</h3>
+    <div class="kv"><div>localStorage used</div><div id="lsUsed">0 B</div></div>
+    <div class="kv"><div>Posts stored</div><div id="postCount">0</div></div>
+  `;
+  feed.appendChild(stats);
+  try { $('#lsUsed').textContent = fmtBytes(localStorageBytesUsed()); } catch {}
+  try { $('#postCount').textContent = Object.keys(state.posts).length; } catch {}
+
+  // Card: Follows • Backup & Restore (non-destructive)
+  const foll = document.createElement('div');
+  foll.className = 'card';
+  const follTitle = document.createElement('h3'); follTitle.textContent = 'Follows • Backup & Restore';
+  const follDesc = document.createElement('p'); follDesc.className = 'muted'; follDesc.textContent = 'Export your current follows to a file and later import/restore them on this or another device.';
+  const btnRow1 = document.createElement('div'); btnRow1.className = 'btn-row';
+  const exportBtn = document.createElement('button'); exportBtn.type='button'; exportBtn.textContent='Export Follows';
+  const importBtn = document.createElement('button'); importBtn.type='button'; importBtn.textContent='Import Follows (Merge)';
+  const restoreBtn = document.createElement('button'); restoreBtn.type='button'; restoreBtn.className='danger'; restoreBtn.textContent='Restore Follows (Replace)';
+  const importFile = document.createElement('input'); importFile.type='file'; importFile.accept='application/json'; importFile.hidden = true;
+  const restoreFile = document.createElement('input'); restoreFile.type='file'; restoreFile.accept='application/json'; restoreFile.hidden = true;
+  btnRow1.append(exportBtn, importBtn, restoreBtn);
+  foll.append(follTitle, follDesc, btnRow1, importFile, restoreFile);
+  feed.appendChild(foll);
+
+  // Wire up follows actions
+  exportBtn.addEventListener('click', () => {
+    try { exportFollows(); } catch (e) { console.error(e); alert('Export failed'); }
+  });
+  importBtn.addEventListener('click', () => importFile.click());
+  importFile.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const incoming = sanitizeFollowsArray(parsed);
+      const before = new Set(state.follows.map(s => s.trim()));
+      let added = 0;
+      for (const s of incoming){ if (!before.has(s)) { state.follows.push(s); before.add(s); added++; } }
+      saveFollows();
+      if (state.view === 'following') renderFeed();
+      alert(`Imported ${incoming.length} follows (added ${added} new).`);
+    } catch { alert('Failed to import: invalid JSON.'); }
+    finally { e.target.value = ''; }
+  });
+  setupConfirmButton(restoreBtn, () => restoreFile.click());
+  restoreFile.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const incoming = sanitizeFollowsArray(parsed);
+      state.follows = incoming;
+      saveFollows();
+      if (state.view === 'following') renderFeed();
+      alert(`Restored follow list (${incoming.length} entries).`);
+    } catch { alert('Failed to restore: invalid JSON.'); }
+    finally { e.target.value = ''; }
+  });
+
+  // Separator
+  const hr = document.createElement('hr'); hr.className = 'section-sep'; feed.appendChild(hr);
+
+  // Card: Danger Zone (destructive) • KEEP LAST
+  const danger = document.createElement('div');
+  danger.className = 'card';
+  const dzTitle = document.createElement('h3'); dzTitle.textContent = 'Danger Zone';
+  const dzDesc = document.createElement('p'); dzDesc.className = 'muted'; dzDesc.textContent = 'These actions permanently delete data. Use with care.';
+  const btnRow2 = document.createElement('div'); btnRow2.className = 'btn-row';
+  const nukePosts = document.createElement('button'); nukePosts.type='button'; nukePosts.className='danger'; nukePosts.textContent='Nuke Posts';
+  const nukeFollows = document.createElement('button'); nukeFollows.type='button'; nukeFollows.className='danger'; nukeFollows.textContent='Nuke Follow List';
+  btnRow2.append(nukePosts, nukeFollows);
+  danger.append(dzTitle, dzDesc, btnRow2);
+  feed.appendChild(danger);
+
+  // Wire up destructive actions with confirmation
+  setupConfirmButton(nukePosts, () => {
+    state.posts = {};
+    state.hidden = new Set();
+    state.favorites = new Set();
+    persistStorage();
+    renderFeed();
+  });
+  setupConfirmButton(nukeFollows, () => {
+    state.follows = [];
+    saveFollows();
+    delCookie('vibestr_follows');
+    if (state.view === 'following') renderFeed();
+  });
 }
 
 async function renderFollowingView(){

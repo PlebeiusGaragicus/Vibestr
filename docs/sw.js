@@ -3,7 +3,7 @@
 // - Bump CACHE whenever shipped assets change (app.js/styles/index.html/icons).
 // - This forces clients to fetch the latest files and keeps update semantics simple.
 // - The app header build tag parses this value to display the current build.
-const CACHE = 'vibestr-v17'; // BUILD NUMBER TO INCREMENT FOR CACHE-BUSTING
+const CACHE = 'vibestr-v19'; // BUILD NUMBER TO INCREMENT FOR CACHE-BUSTING
 const ASSETS = [
   './',
   './index.html',

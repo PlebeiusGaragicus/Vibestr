@@ -12,6 +12,3 @@ Properly show nostr:nprofile1sadf links
 
 
 Sanity check scroll-to-mark-as-viewed feature
-
-
-Nip-05 verification

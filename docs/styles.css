@@ -85,6 +85,12 @@ body{
 .dialog::backdrop{ background:rgba(0,0,0,.6); }
 .dialog-body{ min-width:min(92vw, 520px); padding:1rem; }
 .dialog-actions{ display:flex; justify-content:flex-end; gap:.5rem; padding-top:.5rem; }
+/* Settings groups inside storage dialog */
+.settings-group{ display:flex; flex-direction:column; gap:.5rem; margin:.75rem 0; }
+.settings-group .group-title{ margin:.25rem 0; font-size:1.05rem; color:var(--fg); }
+.btn-row{ display:flex; flex-wrap:wrap; gap:.5rem; }
+.btn-row > button{ flex:0 0 auto; }
+.section-sep{ border:0; border-top:1px solid var(--border); margin:1rem 0; opacity:.7; }
 .dialog input{ width:100%; padding:.6rem .7rem; border-radius:.5rem; border:1px solid var(--border); background:#050505; color:var(--fg); }
 .primary{ background:var(--purple); color:#fff; border:none; border-radius:.6rem; padding:.5rem .9rem; }
 .danger{ background:transparent; color:#ffabab; border:1px solid #3b0b0b; border-radius:.6rem; padding:.5rem .9rem; }

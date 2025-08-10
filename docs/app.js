@@ -23,25 +23,44 @@ const state = {
   lastRefresh: 0,
 };
 
+// Session-only: track posts marked read during this visit so they remain visible until reload
+const sessionReadNow = new Set();
+
 // Cookies (for follows)
 function setCookie(name, value, days = 365){
   const d = new Date();
   d.setTime(d.getTime() + days*24*60*60*1000);
   document.cookie = `${name}=${encodeURIComponent(value)}; expires=${d.toUTCString()}; path=/; SameSite=Lax`;
+  try { console.debug('[Vibestr][cookie] setCookie', { name, bytes: String(value||'').length }); } catch {}
 }
 function getCookie(name){
-  return document.cookie.split('; ').find(row => row.startsWith(name + '='))?.split('=')[1] ?? '';
+  const v = document.cookie.split('; ').find(row => row.startsWith(name + '='))?.split('=')[1] ?? '';
+  try { console.debug('[Vibestr][cookie] getCookie', { name, found: !!v, bytes: String(v).length }); } catch {}
+  return v;
 }
-function delCookie(name){ document.cookie = `${name}=; Max-Age=0; path=/`; }
+function delCookie(name){ document.cookie = `${name}=; Max-Age=0; path=/`; try { console.debug('[Vibestr][cookie] delCookie', { name }); } catch {} }
 
 function loadFollows(){
+  try { console.debug('[Vibestr][follows] loadFollows: begin'); } catch {}
   try {
     const raw = decodeURIComponent(getCookie('vibestr_follows') || '');
-    const arr = raw ? JSON.parse(raw) : [];
+    let arr = raw ? JSON.parse(raw) : null;
+    if (!Array.isArray(arr)){
+      try { arr = JSON.parse(localStorage.getItem(LS_FOLLOWS) || '[]'); } catch { arr = []; }
+    }
     state.follows = Array.isArray(arr) ? arr : [];
-  } catch { state.follows = []; }
+    try { console.debug('[Vibestr][follows] loadFollows: cookie/localStorage read', { count: state.follows.length, follows: state.follows }); } catch {}
+  } catch {
+    try { state.follows = JSON.parse(localStorage.getItem(LS_FOLLOWS) || '[]') ?? []; }
+    catch { state.follows = []; }
+    try { console.debug('[Vibestr][follows] loadFollows: fallback localStorage', { count: state.follows.length, follows: state.follows }); } catch {}
+  }
 }
-function saveFollows(){ setCookie('vibestr_follows', JSON.stringify(state.follows)); }
+function saveFollows(){
+  setCookie('vibestr_follows', JSON.stringify(state.follows));
+  try { localStorage.setItem(LS_FOLLOWS, JSON.stringify(state.follows)); } catch {}
+  try { console.debug('[Vibestr][follows] saveFollows', { count: state.follows.length, follows: state.follows }); } catch {}
+}
 
 // localStorage (for posts/hidden/favorites/profiles)
 const LS_POSTS = 'vibestr_posts';
@@ -49,6 +68,7 @@ const LS_HIDDEN = 'vibestr_hidden';
 const LS_FAVS = 'vibestr_favorites';
 const LS_PROFILES = 'vibestr_profiles';
 const LS_QUOTES = 'vibestr_quotes'; // cached mentioned notes (id -> event)
+const LS_FOLLOWS = 'vibestr_follows_ls'; // mirror follows in localStorage for reliability
 
 function loadStorage(){
   try { state.posts = JSON.parse(localStorage.getItem(LS_POSTS) || '{}') ?? {}; } catch { state.posts = {}; }
@@ -98,12 +118,43 @@ const bottomSheet = $('#bottomSheet');
 const archiveToolbar = $('#archiveToolbar');
 const archiveFavToggle = $('#archiveFavToggle');
 const refreshBtn = $('#refreshBtn');
+const settingsView = $('#settingsView');
 
 function toggleDrawer(open){
   drawer.classList.toggle('open', open ?? !drawer.classList.contains('open'));
   scrim.hidden = !drawer.classList.contains('open');
 }
-function toggleSheet(open){ bottomSheet.classList.toggle('open', open ?? !bottomSheet.classList.contains('open')); }
+function toggleSheet(open){ if (!bottomSheet) return; bottomSheet.classList.toggle('open', open ?? !bottomSheet.classList.contains('open')); }
+
+function updateNavSelection(){
+  const items = $$('.drawer .drawer-nav .nav-item[data-view]');
+  for (const el of items){
+    const isCur = el.dataset.view === state.view;
+    if (isCur) el.setAttribute('aria-current', 'page');
+    else el.removeAttribute('aria-current');
+    el.disabled = isCur;
+  }
+  try { console.debug('[Vibestr][nav] updateNavSelection', { view: state.view }); } catch {}
+  updateViewTitle();
+}
+
+function updateViewTitle(){
+  const el = $('#viewTitle'); if (!el) return;
+  let title = 'Inbox';
+  switch (state.view){
+    case 'favorites': title = 'Favorites'; break;
+    case 'archive': title = state.archiveFavOnly ? 'Archive • Only favorites' : 'Archive'; break;
+    case 'following': title = 'Following'; break;
+    case 'settings': title = 'Settings'; break;
+    default: title = 'Inbox';
+  }
+  el.textContent = title;
+}
+
+function updateSettingsStats(){
+  $('#lsUsed').textContent = fmtBytes(localStorageBytesUsed());
+  $('#postCount').textContent = Object.keys(state.posts).length;
+}
 
 $('#burgerBtn')?.addEventListener('click', () => toggleDrawer(true));
 $('#closeDrawerBtn')?.addEventListener('click', () => toggleDrawer(false));
@@ -125,7 +176,13 @@ archiveFavToggle?.addEventListener('click', () => {
 
 $('.drawer .drawer-nav')?.addEventListener?.('click', (e) => {
   const t = e.target.closest('.nav-item'); if(!t) return;
-  if (t.dataset.view) { state.view = t.dataset.view; renderFeed(); }
+  if (t.disabled) return;
+  if (t.dataset.view) {
+    // Close drawer on mobile for consistency
+    toggleDrawer(false);
+    if (state.view === t.dataset.view) return;
+    state.view = t.dataset.view; renderFeed();
+  }
   else if (t.id === 'storageBtn') { openStorageDialog(); }
 });
 
@@ -217,15 +274,16 @@ function extractNostrKey(s){
   const lower = t.toLowerCase();
   const idx = lower.indexOf('nostr:');
   if (idx >= 0) t = t.slice(idx + 6);
-  const m = t.match(/(npub1[02-9ac-hj-np-z]{58})|(nprofile1[02-9ac-hj-np-z]+)/i);
-  if (m) return m[0];
+  const m = t.match(/(npub1[02-9ac-hj-np-z]{58})|(nprofile1[02-9ac-hj-np-z]+)|([0-9a-f]{64})/i);
+  if (m) { try { console.debug('[Vibestr][follow] extractNostrKey: matched', { input: s, output: m[0] }); } catch {}; return m[0]; }
+  try { console.debug('[Vibestr][follow] extractNostrKey: no match', { input: s }); } catch {}
   return null;
 }
 
-// Storage dialog
-const storageDialog = $('#storageDialog');
-const nukePostsConfirmBtn = $('#nukePostsConfirmBtn');
-const nukeFollowsConfirmBtn = $('#nukeFollowsConfirmBtn');
+// Settings (inline)
+const storageDialog = $('#storageDialog'); // legacy dialog removed; keep null ref for safety
+const settingsNukePostsBtn = $('#settingsNukePostsBtn');
+const settingsNukeFollowsBtn = $('#settingsNukeFollowsBtn');
 
 function setupConfirmButton(btn, action){
   if (!btn) return;
@@ -243,16 +301,18 @@ function setupConfirmButton(btn, action){
   storageDialog?.addEventListener('close', reset);
 }
 
-setupConfirmButton(nukePostsConfirmBtn, () => {
+setupConfirmButton(settingsNukePostsBtn, () => {
   state.posts = {};
   state.hidden = new Set();
   state.favorites = new Set();
   persistStorage();
   renderFeed();
 });
-setupConfirmButton(nukeFollowsConfirmBtn, () => {
+setupConfirmButton(settingsNukeFollowsBtn, () => {
   state.follows = [];
   saveFollows();
+  delCookie('vibestr_follows');
+  try { localStorage.removeItem(LS_FOLLOWS); } catch {}
 });
 function openStorageDialog(){
   $('#lsUsed').textContent = fmtBytes(localStorageBytesUsed());
@@ -272,8 +332,8 @@ function eventToCard(ev){
   authorEl.title = ev.pubkey;
   const t = new Date((ev.created_at||0)*1000);
   const timeEl = node.querySelector('[data-field="time"]');
-  timeEl.textContent = t.toLocaleString();
-  timeEl.title = timeago((ev.created_at||0)*1000);
+  timeEl.textContent = `${t.toLocaleString()} • ${timeago(t.getTime())}`;
+  timeEl.title = t.toISOString();
   const ava = node.querySelector('.avatar');
   if (prof?.picture) {
     ava.innerHTML = '';
@@ -296,20 +356,44 @@ function eventToCard(ev){
 }
 
 function renderFeed(){
+  // Settings view (inline)
+  if (state.view === 'settings'){
+    archiveToolbar.hidden = true;
+    emptyStateEl.style.display = 'none';
+    feedEl.innerHTML = '';
+    settingsView.hidden = false;
+    updateSettingsStats();
+    updateNavSelection();
+    return;
+  }
+  settingsView.hidden = true;
+
   if (state.view === 'following') {
+    try { console.debug('[Vibestr][render] enter view', { view: 'following', followsCount: state.follows.length }); } catch {}
     emptyStateEl.style.display = 'none';
     feedEl.innerHTML = '';
     archiveToolbar.hidden = true;
     renderFollowingView().catch(()=>{});
+    updateNavSelection();
     return;
   }
+  // Scroll to top before rendering Inbox/Archive/Favorites
+  try {
+    window.scrollTo(0, 0);
+    const content = $('#content'); if (content) content.scrollTop = 0;
+    if (feedEl) feedEl.scrollTop = 0;
+    console.debug('[Vibestr][render] scrolled to top for view', { view: state.view });
+  } catch {}
   const all = Object.values(state.posts);
   let toShow = [];
-  if (state.view === 'archive') {
+  if (state.view === 'favorites') {
+    toShow = all.filter(ev => state.favorites.has(ev.id));
+  } else if (state.view === 'archive') {
     archiveFavToggle?.setAttribute('aria-pressed', String(!!state.archiveFavOnly));
     toShow = all.filter(ev => state.archiveFavOnly ? state.favorites.has(ev.id) : true);
   } else { // inbox
-    toShow = all.filter(ev => !state.hidden.has(ev.id));
+    // Keep items visible during current session even if marked hidden now
+    toShow = all.filter(ev => !(state.hidden.has(ev.id) && !sessionReadNow.has(ev.id)));
   }
   toShow.sort((a,b)=> (b.created_at||0)-(a.created_at||0));
   feedEl.innerHTML = '';
@@ -320,7 +404,10 @@ function renderFeed(){
     emptyStateEl.style.display = 'none';
   } else {
     const ps = emptyStateEl.querySelectorAll('p');
-    if (state.view === 'inbox' && totalPosts > 0) {
+    if (state.view === 'favorites'){
+      if (ps[0]) ps[0].textContent = 'No favorites yet';
+      if (ps[1]) ps[1].textContent = 'Tap ★ on posts to add them to Favorites.';
+    } else if (state.view === 'inbox' && totalPosts > 0) {
       if (ps[0]) ps[0].textContent = 'Inbox zero';
       if (ps[1]) ps[1].textContent = 'All posts have been viewed. Fetch new posts or browse the Archive.';
     } else {
@@ -331,30 +418,53 @@ function renderFeed(){
   }
   archiveToolbar.hidden = state.view !== 'archive';
   setupReadObserver();
+  updateNavSelection();
 }
 
 async function renderFollowingView(){
   const feed = feedEl;
-  // Decode follows to hex pubkeys
-  let nip19 = await getNip19();
+  // Inline add-follow form
+  const wrap = document.createElement('div'); wrap.className='follow-add';
+  const row = document.createElement('div'); row.className='row';
+  const input = document.createElement('input'); input.type='text'; input.placeholder='npub1… or nprofile1… or hex'; input.autocomplete='off'; input.id='followAddInput';
+  const addBtn = document.createElement('button'); addBtn.className='chip'; addBtn.type='button'; addBtn.id='followAddBtn'; addBtn.textContent='Add';
+  row.append(input, addBtn); wrap.append(row);
+  feed.appendChild(wrap);
+  try { console.debug('[Vibestr][following] renderFollowingView: initial', { follows: state.follows }); } catch {}
+
+  // Wire add-follow interactions immediately (must work even when there are 0 follows)
+  const addFollow = () => {
+    let v = input.value.trim(); if (!v) return;
+    const extracted = extractNostrKey(v); if (extracted) v = extracted;
+    const vNorm = /^[0-9a-f]{64}$/i.test(v) ? v.toLowerCase() : v;
+    const before = state.follows.length;
+    if (!state.follows.includes(vNorm)) { state.follows.push(vNorm); saveFollows(); }
+    try { console.debug('[Vibestr][follow] addFollow', { raw: input.value, extracted, stored: vNorm, before, after: state.follows.length, follows: state.follows }); } catch {}
+    input.value='';
+    renderFeed();
+  };
+  addBtn.addEventListener('click', addFollow);
+  input.addEventListener('keydown', (e)=>{ if (e.key==='Enter') { e.preventDefault(); addFollow(); } });
+
+  // Decode follows to hex pubkeys (lazy-load nip19 only if needed)
   const pubs = [];
+  let nip19 = null; // lazy load when encountering non-hex entries
   for (const x of state.follows){
     const s = (x||'').trim(); if(!s) continue;
     if (/^[0-9a-f]{64}$/i.test(s)) { pubs.push(s.toLowerCase()); continue; }
-    try{
-      const d = nip19.decode(s);
-      if (d.type === 'npub' && typeof d.data === 'string') pubs.push(d.data.toLowerCase());
-      else if (d.type === 'nprofile' && d.data?.pubkey) pubs.push(String(d.data.pubkey).toLowerCase());
-    }catch{}
+    if (!nip19){ try { nip19 = await getNip19(); } catch { nip19 = null; } }
+    if (nip19){
+      try{
+        const d = nip19.decode(s);
+        if (d.type === 'npub' && typeof d.data === 'string') pubs.push(d.data.toLowerCase());
+        else if (d.type === 'nprofile' && d.data?.pubkey) pubs.push(String(d.data.pubkey).toLowerCase());
+      }catch{}
+    }
   }
   const uniq = [...new Set(pubs)];
-  if (!uniq.length){
-    const ps = emptyStateEl.querySelectorAll('p');
-    if (ps[0]) ps[0].textContent = 'No follows yet.';
-    if (ps[1]) ps[1].textContent = 'Add npubs via the menu to see profiles here.';
-    emptyStateEl.style.display = 'block';
-    return;
-  }
+  try { console.debug('[Vibestr][following] decoded pubs', { uniq, count: uniq.length }); } catch {}
+  // No follows: keep feed visible with the add form; don't show global empty state
+  if (!uniq.length){ return; }
   // Fetch profiles for missing pubkeys
   const need = uniq.filter(pk => !state.profiles[pk]);
   if (need.length){
@@ -380,13 +490,52 @@ async function renderFollowingView(){
     const name = document.createElement('div'); name.className='author'; name.textContent=(prof?.display_name||prof?.name||'').trim() || shortenAuthor(pk);
     const pkline = document.createElement('div'); pkline.className='time'; pkline.textContent = shortenAuthor(pk);
     meta.append(name, pkline);
-    header.append(ava, meta);
+    const actions = document.createElement('div'); actions.className='actions';
+    const unfBtn = document.createElement('button'); unfBtn.className='danger'; unfBtn.type='button'; unfBtn.textContent='Unfollow';
+    actions.append(unfBtn);
+    header.append(ava, meta, actions);
     const body = document.createElement('div'); body.className='content';
     const about = (prof?.about||'').trim();
     body.textContent = about || '';
     card.append(header, body);
     feed.appendChild(card);
+
+    // Unfollow handler: remove all follows mapping to this pubkey
+    unfBtn.addEventListener('click', async () => {
+      try { console.debug('[Vibestr][follow] Unfollow clicked', { targetHex: pk }); } catch {}
+      const hexOf = async (s) => {
+        const v = (s||'').trim(); if (!v) return null;
+        if (/^[0-9a-f]{64}$/i.test(v)) return v.toLowerCase();
+        if (!nip19){ try { nip19 = await getNip19(); } catch { return null; } }
+        try{
+          const d = nip19.decode(v);
+          if (d.type === 'npub' && typeof d.data === 'string') return d.data.toLowerCase();
+          if (d.type === 'nprofile' && d.data?.pubkey) return String(d.data.pubkey).toLowerCase();
+        }catch{}
+        return null;
+      };
+      const before = state.follows.length;
+      const keep = [];
+      for (const x of state.follows){
+        const hx = await hexOf(x);
+        if (hx !== pk) keep.push(x);
+      }
+      state.follows = keep;
+      // Purge cached posts authored by this pubkey
+      const removedIds = [];
+      for (const [id, ev] of Object.entries(state.posts)){
+        if (ev?.pubkey === pk){
+          delete state.posts[id];
+          state.hidden.delete(id);
+          state.favorites.delete(id);
+          removedIds.push(id);
+        }
+      }
+      if (state.follows.length !== before){ try { console.debug('[Vibestr][follow] Unfollow removed', { before, after: state.follows.length, follows: state.follows, purgedPosts: removedIds.length }); } catch {} ; saveFollows(); persistStorage(); renderFeed(); }
+    });
   }
+
+  // (listeners already attached above)
 }
 
 // IntersectionObserver to hide posts once fully viewed in Inbox
@@ -400,13 +549,12 @@ function setupReadObserver(){
         const id = ent.target.dataset.id;
         if (id && !state.hidden.has(id)) {
           state.hidden.add(id);
+          sessionReadNow.add(id);
           persistStorage();
         }
         try { observer.unobserve(ent.target); } catch {}
-        ent.target.remove();
       }
     }
-    if (!feedEl.children.length) emptyStateEl.style.display = 'block';
   }, { threshold: [0.6] });
   $$('.post', feedEl).forEach(el => observer.observe(el));
 }
@@ -425,9 +573,9 @@ function isImageUrl(u){ return /\.(png|jpe?g|gif|webp|avif)(\?.*)?$/i.test(u); }
 let nip19Cached = null;
 async function getNip19(){
   if (nip19Cached) return nip19Cached;
-  let mod; try { mod = await import('https://esm.sh/nostr-tools@2.9.0'); }
-  catch { mod = await import('https://esm.sh/nostr-tools@1.17.0'); }
-  const n = mod.nip19 || mod.default?.nip19; if (!n) throw new Error('nostr-tools nip19 failed to load');
+  let mod; try { mod = await import('https://esm.sh/nostr-tools@2.9.0'); console.debug('[Vibestr][nip19] loaded 2.9.0'); }
+  catch { try { mod = await import('https://esm.sh/nostr-tools@1.17.0'); console.debug('[Vibestr][nip19] loaded 1.17.0'); } catch (e) { console.error('[Vibestr][nip19] failed to load', e); throw e; } }
+  const n = mod.nip19 || mod.default?.nip19; if (!n) { console.error('[Vibestr][nip19] missing nip19 export'); throw new Error('nostr-tools nip19 failed to load'); }
   nip19Cached = n; return n;
 }
 function buildContent(ev, opts={}){
@@ -470,7 +618,7 @@ function eventToQuote(ev){
   const ava = document.createElement('div'); ava.className='avatar'; if (prof?.picture){ const i=document.createElement('img'); i.src=prof.picture; i.alt=''; ava.append(i);} else { ava.textContent='👤'; }
   const meta = document.createElement('div'); meta.className='meta';
   const name = document.createElement('div'); name.className='author'; name.textContent=(prof?.display_name||prof?.name||'').trim() || shortenAuthor(ev.pubkey);
-  const time = document.createElement('div'); time.className='time'; const dt=new Date((ev.created_at||0)*1000); time.textContent=dt.toLocaleString();
+  const time = document.createElement('div'); time.className='time'; const dt=new Date((ev.created_at||0)*1000); time.textContent = `${dt.toLocaleString()} • ${timeago(dt.getTime())}`; time.title = dt.toISOString();
   meta.append(name, time);
   header.append(ava, meta);
   const body = document.createElement('div'); body.className='content'; body.replaceChildren(...buildContent(ev, { allowQuotes: false }));

@@ -15,9 +15,8 @@
 
   <header class="topbar">
     <button id="burgerBtn" class="icon-btn" aria-label="Open menu" title="Menu">☰</button>
-    <h1 class="brand">Vibestr</h1>
+    <div id="viewTitle" class="brand">Inbox</div>
     <div class="spacer"></div>
-    <button id="refreshBtn" class="chip">Fetch posts</button>
   </header>
 
   <aside id="drawer" class="drawer">
@@ -27,11 +26,11 @@
     </div>
     <nav class="drawer-nav">
       <button class="nav-item" data-view="inbox">Inbox</button>
+      <button class="nav-item" data-view="favorites">Favorites</button>
       <button class="nav-item" data-view="archive">Archive</button>
       <button class="nav-item" data-view="following">Following</button>
       <hr />
-      <button id="drawerFollowBtn" class="nav-item">+ Follow</button>
-      <button id="storageBtn" class="nav-item">Storage</button>
+      <button class="nav-item" data-view="settings">Settings</button>
     </nav>
   </aside>
   <div id="scrim" class="scrim" hidden></div>
@@ -45,65 +44,22 @@
     <section id="archiveToolbar" class="archive-bar" hidden>
       <button id="archiveFavToggle" class="toggle-btn" aria-pressed="false" type="button">Only favorites</button>
     </section>
+    <section id="settingsView" class="settings" hidden>
+      <article class="card">
+        <h3>Settings</h3>
+        <div class="kv"><div>localStorage used</div><div id="lsUsed">0 B</div></div>
+        <div class="kv"><div>Posts stored</div><div id="postCount">0</div></div>
+        <div class="dialog-actions">
+          <button id="settingsNukePostsBtn" class="danger" type="button">Nuke Posts</button>
+          <button id="settingsNukeFollowsBtn" class="danger" type="button">Nuke Follow List</button>
+        </div>
+      </article>
+    </section>
     <section id="feed" class="feed" aria-live="polite"></section>
   </main>
   
 
-  <button id="bottomSheetToggle" class="bottom-toggle" aria-label="Open actions">▲</button>
-  <section id="bottomSheet" class="bottom-sheet" aria-hidden="true">
-    <div class="handle"></div>
-    <div class="sheet-actions">
-      <button class="sheet-btn" id="sheetFollow">+ Follow</button>
-      <button class="sheet-btn" id="sheetRefresh">Fetch posts</button>
-      <button class="sheet-btn" id="sheetStorage">Storage</button>
-    </div>
-  </section>
-
   
-
-  <dialog id="followDialog" class="dialog">
-    <form method="dialog" class="dialog-body" id="followForm">
-      <h3>Add Nostr Public Key</h3>
-      <p class="muted">Paste an npub, nprofile, or hex pubkey. You can also scan a QR code later.</p>
-      <input id="npubInput" type="text" inputmode="text" placeholder="npub1... or nprofile1... or hex" autocomplete="off" />
-      <menu class="dialog-actions">
-        <button value="cancel">Cancel</button>
-        <button id="scanQRBtn" type="button">Scan QR</button>
-        <button id="followAddBtn" value="default" class="primary">Add</button>
-      </menu>
-    </form>
-  </dialog>
-
-  <dialog id="storageDialog" class="dialog">
-    <form method="dialog" class="dialog-body">
-      <h3>Storage Management</h3>
-      <div class="kv">
-        <div>localStorage used</div>
-        <div id="lsUsed">0 B</div>
-      </div>
-      <div class="kv">
-        <div>Posts stored</div>
-        <div id="postCount">0</div>
-      </div>
-      <p class="muted">Favorites are never purged. Vibestr keeps your last 100 non-favorite posts automatically. Use the buttons below to wipe storage or your follow list.</p>
-      <menu class="dialog-actions">
-        <button id="nukePostsConfirmBtn" type="button" class="danger">Nuke Posts</button>
-        <button id="nukeFollowsConfirmBtn" type="button" class="danger">Nuke Follow List</button>
-        <button value="cancel">Close</button>
-      </menu>
-    </form>
-  </dialog>
-
-  <dialog id="qrDialog" class="dialog">
-    <form method="dialog" class="dialog-body" id="qrForm">
-      <h3>Scan QR</h3>
-      <video id="qrVideo" playsinline autoplay muted style="width:100%;max-height:60vh;border-radius:.5rem;background:#000"></video>
-      <p class="muted">Point your camera at a QR code containing an npub or nprofile. Grant camera permission when prompted.</p>
-      <menu class="dialog-actions">
-        <button value="cancel" id="qrCloseBtn">Close</button>
-      </menu>
-    </form>
-  </dialog>
 
   <template id="postTemplate">
     <article class="post" tabindex="0">
@@ -117,7 +73,7 @@
           <button class="icon-btn fav" title="Favorite" aria-label="Favorite">☆</button>
         </div>
       </header>
-      <div class="content" data-field="content"></div>
+      <div class="post-content" data-field="content"></div>
     </article>
   </template>
 

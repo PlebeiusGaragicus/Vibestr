@@ -1,5 +1,5 @@
 /* Vibestr Service Worker */
-const CACHE = 'vibestr-v6';
+const CACHE = 'vibestr-v7';
 const ASSETS = [
   './',
   './index.html',

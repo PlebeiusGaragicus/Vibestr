@@ -7,6 +7,9 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(console.warn));
 }
 
+// Disable browser scroll restoration so we control scroll position after reload/back
+try { if ('scrollRestoration' in history) history.scrollRestoration = 'manual'; } catch {}
+
 // Fetch latest kind 0 for a given hex pubkey and update state.profiles
 async function refreshProfile(pk){
   if (!pk) return false;
@@ -64,7 +67,6 @@ const state = {
   ],
   profiles: {}, // pubkey -> profile metadata (kind 0 content JSON)
   quotes: {}, // id -> mentioned note event cache
-  archiveFavOnly: false,
   lastRefresh: 0,
 };
 
@@ -168,23 +170,28 @@ const buildTag = $('#buildTag');
 async function updateBuildTag(){
   if (!buildTag) return;
   try{
-    const res = await fetch('./sw.js', { cache: 'no-store' });
-    if (!res.ok) return;
+    const swUrl = new URL('sw.js', location.href).toString();
+    const res = await fetch(swUrl, { cache: 'no-store' });
+    if (!res.ok) { buildTag.textContent = 'dev'; return; }
     const txt = await res.text();
-    const m = txt.match(/const\s+CACHE\s*=\s*['\"]([^'\"]+)['\"]/);
+    const m = txt.match(/const\s+CACHE\s*=\s*['"][^'"]+['"]/);
     if (m){
-      const full = m[1];
+      const full = (m[0].split('=')[1] || '').replace(/['";\s]/g, '');
       const short = full.replace(/^vibestr-/, '');
-      buildTag.textContent = short; // e.g. v9
+      buildTag.textContent = short; // e.g. v13
       buildTag.title = `Build ${full}`;
+    } else {
+      buildTag.textContent = 'dev';
     }
-  }catch{}
+  }catch(e){ buildTag.textContent = 'dev'; try { console.debug('[Vibestr][build] updateBuildTag failed', e); } catch{} }
 }
 const settingsView = $('#settingsView');
 
 function toggleDrawer(open){
   drawer.classList.toggle('open', open ?? !drawer.classList.contains('open'));
-  scrim.hidden = !drawer.classList.contains('open');
+  const isOpen = drawer.classList.contains('open');
+  scrim.hidden = !isOpen;
+  if (isOpen) updateBuildTag();
 }
 function toggleSheet(open){ if (!bottomSheet) return; bottomSheet.classList.toggle('open', open ?? !bottomSheet.classList.contains('open')); }
 
@@ -205,7 +212,7 @@ function updateViewTitle(){
   let title = 'Inbox';
   switch (state.view){
     case 'favorites': title = 'Favorites'; break;
-    case 'archive': title = state.archiveFavOnly ? 'Archive • Only favorites' : 'Archive'; break;
+    case 'archive': title = 'Archive'; break;
     case 'following': title = 'Following'; break;
     case 'settings': title = 'Settings'; break;
     default: title = 'Inbox';
@@ -230,11 +237,7 @@ $('#addFollowBtn')?.addEventListener('click', openFollowDialog);
 $('#drawerFollowBtn')?.addEventListener('click', () => { toggleDrawer(false); openFollowDialog(); });
 $('#emptyFetchBtn')?.addEventListener('click', refreshFeed);
 $('#refreshBtn')?.addEventListener('click', refreshFeed);
-archiveFavToggle?.addEventListener('click', () => {
-  state.archiveFavOnly = !state.archiveFavOnly;
-  archiveFavToggle.setAttribute('aria-pressed', String(state.archiveFavOnly));
-  if (state.view === 'archive') renderFeed();
-});
+// (archive favorites toggle removed)
 
 $('.drawer .drawer-nav')?.addEventListener?.('click', (e) => {
   const t = e.target.closest('.nav-item'); if(!t) return;
@@ -475,8 +478,13 @@ function eventToCard(ev){
   const favBtn = node.querySelector('.fav');
   if (state.favorites.has(ev.id)) favBtn.textContent = '★';
   favBtn.addEventListener('click', () => {
-    if (state.favorites.has(ev.id)) state.favorites.delete(ev.id); else state.favorites.add(ev.id);
-    persistStorage(); renderFeed();
+    const wasFav = state.favorites.has(ev.id);
+    if (wasFav) state.favorites.delete(ev.id); else state.favorites.add(ev.id);
+    persistStorage();
+    // Update the star icon in place without re-rendering the whole feed
+    favBtn.textContent = state.favorites.has(ev.id) ? '★' : '☆';
+    // Only re-render when in Favorites view (list membership changes)
+    if (state.view === 'favorites') renderFeed();
   });
   return node;
 }
@@ -488,7 +496,7 @@ function renderFeed(){
     try { console.debug('[Vibestr][render] enter view', { view: 'following', followsCount: state.follows.length }); } catch {}
     emptyStateEl.style.display = 'none';
     feedEl.innerHTML = '';
-    archiveToolbar.hidden = true;
+    if (archiveToolbar) archiveToolbar.hidden = true;
     renderFollowingView().catch(()=>{});
     updateNavSelection();
     return;
@@ -505,8 +513,7 @@ function renderFeed(){
   if (state.view === 'favorites') {
     toShow = all.filter(ev => state.favorites.has(ev.id));
   } else if (state.view === 'archive') {
-    archiveFavToggle?.setAttribute('aria-pressed', String(!!state.archiveFavOnly));
-    toShow = all.filter(ev => state.archiveFavOnly ? state.favorites.has(ev.id) : true);
+    toShow = all;
   } else { // inbox
     // Keep items visible during current session even if marked hidden now
     toShow = all.filter(ev => !(state.hidden.has(ev.id) && !sessionReadNow.has(ev.id)));
@@ -532,7 +539,7 @@ function renderFeed(){
     }
     emptyStateEl.style.display = 'block';
   }
-  archiveToolbar.hidden = state.view !== 'archive';
+  if (archiveToolbar) archiveToolbar.hidden = true;
   setupReadObserver();
   updateNavSelection();
 }

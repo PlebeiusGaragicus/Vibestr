@@ -170,8 +170,8 @@ const emptyStateEl = $('#emptyState');
 const drawer = $('#drawer');
 const scrim = $('#scrim');
 const bottomSheet = $('#bottomSheet');
-const archiveToolbar = $('#archiveToolbar');
-const archiveFavToggle = $('#archiveFavToggle');
+// Archive toolbar and Favorites toggle were removed in the refactor.
+// Settings are now managed via a dialog (see openStorageDialog()).
 const refreshBtn = $('#refreshBtn');
 const buildTag = $('#buildTag');
 
@@ -193,7 +193,7 @@ async function updateBuildTag(){
     }
   }catch(e){ buildTag.textContent = 'dev'; try { console.debug('[Vibestr][build] updateBuildTag failed', e); } catch{} }
 }
-const settingsView = $('#settingsView');
+// Inline settings view removed; we keep settings in a modal dialog.
 
 function toggleDrawer(open){
   drawer.classList.toggle('open', open ?? !drawer.classList.contains('open'));
@@ -236,10 +236,12 @@ function updateSettingsStats(){
 $('#burgerBtn')?.addEventListener('click', () => toggleDrawer(true));
 $('#closeDrawerBtn')?.addEventListener('click', () => toggleDrawer(false));
 scrim?.addEventListener('click', () => toggleDrawer(false));
-$('#bottomSheetToggle')?.addEventListener('click', () => toggleSheet());
-$('#sheetFollow')?.addEventListener('click', () => { toggleSheet(false); openFollowDialog(); });
-$('#sheetRefresh')?.addEventListener('click', () => { toggleSheet(false); refreshFeed(); });
-$('#sheetStorage')?.addEventListener('click', () => { toggleSheet(false); openStorageDialog(); });
+  $('#bottomSheetToggle')?.addEventListener('click', () => toggleSheet());
+  $('#sheetFollow')?.addEventListener('click', () => { toggleSheet(false); openFollowDialog(); });
+  $('#sheetRefresh')?.addEventListener('click', () => { toggleSheet(false); refreshFeed(); });
+  // Open Settings as a modal dialog (no inline settings view)
+  // This opens the storage management dialog for settings adjustments
+  $('#sheetStorage')?.addEventListener('click', () => { toggleSheet(false); openStorageDialog(); });
 
 $('#addFollowBtn')?.addEventListener('click', openFollowDialog);
 $('#drawerFollowBtn')?.addEventListener('click', () => { toggleDrawer(false); openFollowDialog(); });
@@ -247,12 +249,14 @@ $('#emptyFetchBtn')?.addEventListener('click', refreshFeed);
 $('#refreshBtn')?.addEventListener('click', refreshFeed);
 // (archive favorites toggle removed)
 
-$('.drawer .drawer-nav')?.addEventListener?.('click', (e) => {
-  const t = e.target.closest('.nav-item'); if(!t) return;
-  const view = t.dataset.view;
-  if (view === 'settings') { toggleDrawer(false); openStorageDialog(); return; }
-  if (view) { state.view = view; renderFeed(); toggleDrawer(false); }
-});
+  $('.drawer .drawer-nav')?.addEventListener?.('click', (e) => {
+    const t = e.target.closest('.nav-item'); if(!t) return;
+    const view = t.dataset.view;
+    // Settings are dialog-based; clicking Settings opens the storage modal
+    // This navigates to the settings dialog for storage management and other settings
+    if (view === 'settings') { toggleDrawer(false); openStorageDialog(); return; }
+    if (view) { state.view = view; renderFeed(); toggleDrawer(false); }
+  });
 
 // Follow dialog
 const followDialog = $('#followDialog');
@@ -451,6 +455,10 @@ restoreFollowsFile?.addEventListener('change', async (e) => {
   } catch { alert('Failed to restore: invalid JSON.'); }
   finally { e.target.value = ''; }
 });
+/**
+ * Open the Storage Management dialog and refresh usage stats.
+ * Settings are dialog-based; there is no inline settings view.
+ */
 function openStorageDialog(){
   try { $('#lsUsed').textContent = fmtBytes(localStorageBytesUsed()); } catch {}
   try { $('#postCount').textContent = Object.keys(state.posts).length; } catch {}
@@ -504,7 +512,6 @@ function renderFeed(){
     try { console.debug('[Vibestr][render] enter view', { view: 'following', followsCount: state.follows.length }); } catch {}
     emptyStateEl.style.display = 'none';
     feedEl.innerHTML = '';
-    if (archiveToolbar) archiveToolbar.hidden = true;
     renderFollowingView().catch(()=>{});
     updateNavSelection();
     return;
@@ -547,7 +554,6 @@ function renderFeed(){
     }
     emptyStateEl.style.display = 'block';
   }
-  if (archiveToolbar) archiveToolbar.hidden = true;
   setupReadObserver();
   updateNavSelection();
 }

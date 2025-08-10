@@ -32,9 +32,13 @@ function setupPkCopy(el, pk){
   if (!el) return;
   el.classList.add('copyable');
   const render = () => {
-    el.textContent = shortenAuthor(pk);
-    const ic = document.createElement('span'); ic.className='copy-icon'; ic.textContent='📋';
-    el.append(' ', ic);
+    // Show shortened npub (not hex) once available; fallback to hex short
+    el.textContent = 'npub…';
+    const addIcon = () => { const ic = document.createElement('span'); ic.className='copy-icon'; ic.textContent='📋'; el.append(' ', ic); };
+    npubOf(pk).then(n => {
+      const disp = n ? (n.length > 14 ? n.slice(0,6) + '…' + n.slice(-4) : n) : shortenAuthor(pk);
+      el.textContent = disp; addIcon();
+    }).catch(() => { el.textContent = shortenAuthor(pk); addIcon(); });
   };
   render();
   el.title = 'Click to copy npub';
@@ -67,6 +71,7 @@ const state = {
   ],
   profiles: {}, // pubkey -> profile metadata (kind 0 content JSON)
   quotes: {}, // id -> mentioned note event cache
+  nip05: {}, // pubkey -> { id, status: 'ok'|'unverified'|'none', ts }
   lastRefresh: 0,
 };
 
@@ -116,6 +121,7 @@ const LS_FAVS = 'vibestr_favorites';
 const LS_PROFILES = 'vibestr_profiles';
 const LS_QUOTES = 'vibestr_quotes'; // cached mentioned notes (id -> event)
 const LS_FOLLOWS = 'vibestr_follows_ls'; // mirror follows in localStorage for reliability
+const LS_NIP05 = 'vibestr_nip05'; // cache of NIP-05 verification results
 
 function loadStorage(){
   try { state.posts = JSON.parse(localStorage.getItem(LS_POSTS) || '{}') ?? {}; } catch { state.posts = {}; }
@@ -123,6 +129,7 @@ function loadStorage(){
   try { state.favorites = new Set(JSON.parse(localStorage.getItem(LS_FAVS) || '[]')); } catch { state.favorites = new Set(); }
   try { state.profiles = JSON.parse(localStorage.getItem(LS_PROFILES) || '{}') ?? {}; } catch { state.profiles = {}; }
   try { state.quotes = JSON.parse(localStorage.getItem(LS_QUOTES) || '{}') ?? {}; } catch { state.quotes = {}; }
+  try { state.nip05 = JSON.parse(localStorage.getItem(LS_NIP05) || '{}') ?? {}; } catch { state.nip05 = {}; }
 }
 function persistStorage(){
   // Enforce retention: keep only last 100 non-favorite posts (by created_at). Favorites are never purged.
@@ -146,6 +153,7 @@ function persistStorage(){
   try { localStorage.setItem(LS_FAVS, JSON.stringify([...state.favorites])); } catch {}
   try { localStorage.setItem(LS_PROFILES, JSON.stringify(state.profiles)); } catch {}
   try { localStorage.setItem(LS_QUOTES, JSON.stringify(state.quotes)); } catch {}
+  try { localStorage.setItem(LS_NIP05, JSON.stringify(state.nip05)); } catch {}
 }
 function localStorageBytesUsed(){
   let total = 0; for (const [k,v] of Object.entries(localStorage)) { total += (k.length + String(v).length); }
@@ -566,7 +574,13 @@ async function renderFollowingView(){
     const meta = document.createElement('div'); meta.className='meta';
     const name = document.createElement('div'); name.className='author'; name.textContent=(prof?.display_name||prof?.name||'').trim() || shortenAuthor(pk);
     const pkline = document.createElement('div'); pkline.className='time'; setupPkCopy(pkline, pk);
-    meta.append(name, pkline);
+    const nipEl = document.createElement('div'); nipEl.className='nip05'; renderNip05Badge(nipEl, pk);
+    const metaLine = document.createElement('div'); metaLine.className='meta-line';
+    // Order: Display name - npub - NIP-05
+    const sep1 = document.createTextNode(' 𑗅 ');
+    const sep2 = document.createTextNode(' 𑗅 ');
+    metaLine.append(name, sep1, pkline, sep2, nipEl);
+    meta.append(metaLine);
     const actions = document.createElement('div'); actions.className='actions';
     const unfBtn = document.createElement('button'); unfBtn.className='danger unfollow-btn'; unfBtn.type='button'; unfBtn.textContent='Unfollow';
     const refBtn = document.createElement('button'); refBtn.className='icon-btn'; refBtn.type='button'; refBtn.textContent='Refresh';
@@ -574,7 +588,8 @@ async function renderFollowingView(){
     header.append(ava, meta, actions);
     const body = document.createElement('div'); body.className='post-content';
     const about = (prof?.about||'').trim();
-    body.textContent = about || '';
+    if (about) { body.textContent = about; }
+    else { body.innerHTML = '<span class="muted"><em>no description</em></span>'; }
     card.append(header, body);
     feed.appendChild(card);
 
@@ -585,9 +600,10 @@ async function renderFollowingView(){
       const updated = state.profiles?.[pk] || null;
       name.textContent = (updated?.display_name||updated?.name||'').trim() || shortenAuthor(pk);
       const about2 = (updated?.about||'').trim();
-      body.textContent = about2 || '';
+      if (about2) { body.textContent = about2; } else { body.innerHTML = '<span class="muted"><em>no description</em></span>'; }
       if (updated?.picture){ ava.innerHTML=''; const img=document.createElement('img'); img.src=updated.picture; img.alt=''; ava.append(img);} else { ava.textContent='👤'; ava.innerHTML='👤'; }
       setupPkCopy(pkline, pk);
+      renderNip05Badge(nipEl, pk, true);
       refBtn.textContent = keep; refBtn.disabled = false;
     });
 
@@ -668,6 +684,104 @@ async function getNip19(){
   catch { try { mod = await import('https://esm.sh/nostr-tools@1.17.0'); console.debug('[Vibestr][nip19] loaded 1.17.0'); } catch (e) { console.error('[Vibestr][nip19] failed to load', e); throw e; } }
   const n = mod.nip19 || mod.default?.nip19; if (!n) { console.error('[Vibestr][nip19] missing nip19 export'); throw new Error('nostr-tools nip19 failed to load'); }
   nip19Cached = n; return n;
+}
+
+// --- NIP-05 verification helpers ---
+function parseNip05Id(idRaw){
+  if (!idRaw || typeof idRaw !== 'string') return null;
+  const s = idRaw.trim().toLowerCase();
+  if (!s) return null;
+  let name = '_'; let domain = s;
+  if (s.includes('@')){
+    const [n, d] = s.split('@');
+    name = (n || '_'); domain = d || '';
+  }
+  if (!domain || !/^[a-z0-9.-]+$/.test(domain)) return null;
+  if (!/^[a-z0-9._-]+$/.test(name)) return null;
+  const display = name === '_' ? domain : `${name}@${domain}`;
+  return { name, domain, display };
+}
+
+async function verifyNip05For(pk, force=false){
+  try{
+    const prof = state.profiles?.[pk] || null;
+    const idRaw = (prof?.nip05 || '').trim();
+    if (!idRaw){
+      state.nip05[pk] = { id: '', status: 'none', ts: Date.now() };
+      persistStorage();
+      return state.nip05[pk];
+    }
+    const parsed = parseNip05Id(idRaw);
+    const TTL = 6 * 60 * 60 * 1000; // 6 hours
+    const now = Date.now();
+    const cached = state.nip05?.[pk];
+    if (!force && cached && cached.id && cached.id.toLowerCase() === (parsed?.display||'').toLowerCase() && (now - (cached.ts||0)) < TTL){
+      return cached;
+    }
+    if (!parsed){
+      state.nip05[pk] = { id: idRaw, status: 'unverified', ts: now };
+      persistStorage();
+      return state.nip05[pk];
+    }
+    const url1 = `https://${parsed.domain}/.well-known/nostr.json?name=${encodeURIComponent(parsed.name)}`;
+    const url2 = `https://${parsed.domain}/.well-known/nostr.json`;
+    let data = null;
+    try{
+      const r1 = await fetch(url1, { cache: 'no-store', headers: { 'accept': 'application/json' } });
+      if (r1.ok) { data = await r1.json().catch(()=>null); }
+      if (!data){
+        const r2 = await fetch(url2, { cache: 'no-store', headers: { 'accept': 'application/json' } });
+        if (r2.ok) data = await r2.json().catch(()=>null);
+      }
+    } catch {}
+    let status = 'unverified';
+    if (data && data.names && typeof data.names === 'object'){
+      const names = data.names;
+      const got = names[parsed.name] || names[parsed.name.toLowerCase()] || null;
+      if (got && typeof got === 'string' && got.toLowerCase() === pk.toLowerCase()) status = 'ok';
+    }
+    state.nip05[pk] = { id: parsed.display, status, ts: now };
+    persistStorage();
+    return state.nip05[pk];
+  } catch {
+    const prof = state.profiles?.[pk] || null;
+    const idRaw = (prof?.nip05 || '').trim();
+    const parsed = parseNip05Id(idRaw);
+    state.nip05[pk] = { id: parsed?.display || idRaw || '', status: idRaw ? 'unverified' : 'none', ts: Date.now() };
+    persistStorage();
+    return state.nip05[pk];
+  }
+}
+
+function renderNip05Badge(el, pk, force=false){
+  if (!el) return;
+  const prof = state.profiles?.[pk] || null;
+  const idRaw = (prof?.nip05 || '').trim();
+  if (!idRaw){
+    el.className = 'nip05 nip05-none';
+    el.textContent = 'no NIP-05';
+    return;
+  }
+  el.className = 'nip05 nip05-pending';
+  const parsed = parseNip05Id(idRaw);
+  const label = parsed?.display || idRaw.toLowerCase();
+  el.textContent = `⏳ ${label}`;
+  verifyNip05For(pk, !!force).then(res => {
+    el.className = 'nip05';
+    if (res?.status === 'ok'){
+      el.classList.add('nip05-ok');
+      el.textContent = `✓ ${res.id || label}`;
+    } else if (res?.status === 'none'){
+      el.classList.add('nip05-none');
+      el.textContent = 'no NIP-05';
+    } else {
+      el.classList.add('nip05-bad');
+      el.textContent = `⚠︎ ${res?.id || label}`;
+    }
+  }).catch(() => {
+    el.className = 'nip05 nip05-bad';
+    el.textContent = `⚠︎ ${label}`;
+  });
 }
 function buildContent(ev, opts={}){
   const allowQuotes = !!opts.allowQuotes;

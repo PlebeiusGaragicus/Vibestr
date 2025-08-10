@@ -1,5 +1,5 @@
 /* Vibestr Service Worker */
-const CACHE = 'vibestr-v7';
+const CACHE = 'vibestr-v8'; // BUILD NUMBER TO INCREMENT FOR CACHE-BUSTING
 const ASSETS = [
   './',
   './index.html',
